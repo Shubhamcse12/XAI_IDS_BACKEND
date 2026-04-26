@@ -1,7 +1,16 @@
+flask
+flask-cors
+gunicorn
+requests
+
 numpy
 pandas
 scikit-learn
+scipy
+
 matplotlib
 seaborn
 shap
 imbalanced-learn
+
+joblib

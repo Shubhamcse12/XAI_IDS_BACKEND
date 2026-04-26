@@ -4,18 +4,52 @@ from joblib import load
 import os
 import numpy as np
 import shap
+import requests
 
 app = Flask(__name__)
 CORS(app)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
+MODELS_DIR = os.path.join(ROOT_DIR, "models")
 
-rf_model_path = os.path.join(ROOT_DIR, "models", "rf_model_25features.pkl")
-svm_model_path = os.path.join(ROOT_DIR, "models", "svm_model_25features.pkl")
+os.makedirs(MODELS_DIR, exist_ok=True)
 
-# --------- Load RF ---------
+# ---------------------------------------------------
+# GOOGLE DRIVE MODEL LINKS
+# ---------------------------------------------------
+RF_URL = "https://drive.google.com/uc?export=download&id=1ybZi9Lk80FXBcjm8SXy_rRM-Lg6qquRw"
+SVM_URL = "https://drive.google.com/uc?export=download&id=1RSqVpd-4Gisg2H-6uEJhoP2QDGM2lTVX"
+
+rf_model_path = os.path.join(MODELS_DIR, "rf_model_25features.pkl")
+svm_model_path = os.path.join(MODELS_DIR, "svm_model_25features.pkl")
+
+
+# ---------------------------------------------------
+# DOWNLOAD MODELS IF NOT EXISTS
+# ---------------------------------------------------
+def download_file(url, path):
+    if not os.path.exists(path):
+        print(f"Downloading {os.path.basename(path)} ...")
+        response = requests.get(url, stream=True)
+        response.raise_for_status()
+
+        with open(path, "wb") as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+
+        print(f"{os.path.basename(path)} downloaded.")
+
+
+download_file(RF_URL, rf_model_path)
+download_file(SVM_URL, svm_model_path)
+
+# ---------------------------------------------------
+# LOAD RF MODEL
+# ---------------------------------------------------
 rf_data = load(rf_model_path)
+
 if isinstance(rf_data, dict):
     rf_model = rf_data.get("model")
     rf_scaler = rf_data.get("scaler")
@@ -25,8 +59,11 @@ else:
     rf_scaler = None
     rf_features = None
 
-# --------- Load SVM ---------
+# ---------------------------------------------------
+# LOAD SVM MODEL
+# ---------------------------------------------------
 svm_data = load(svm_model_path)
+
 if isinstance(svm_data, dict):
     svm_model = svm_data.get("model")
     svm_scaler = svm_data.get("scaler")
@@ -38,6 +75,20 @@ print("✅ Models Loaded Successfully")
 print("RF Expected Feature Count:", rf_model.n_features_in_)
 
 rf_explainer = shap.TreeExplainer(rf_model)
+
+# ---------------------------------------------------
+# ROUTES
+# ---------------------------------------------------
+
+@app.route("/")
+def home():
+    return jsonify({"message": "XAI IDS Backend Running"})
+
+
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({"status": "Backend Running"}), 200
+
 
 @app.route("/features", methods=["GET"])
 def get_features():
@@ -53,11 +104,6 @@ def get_features():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
-
-@app.route("/health", methods=["GET"])
-def health():
-    return jsonify({"status": "Backend Running"}), 200
 
 
 @app.route("/importance", methods=["GET"])
@@ -103,11 +149,10 @@ def predict():
 
         input_data = np.array([features])
 
-       
         if rf_scaler is not None:
             input_data = rf_scaler.transform(input_data)
 
-     
+        # RF Prediction
         rf_pred = rf_model.predict(input_data)[0]
         rf_conf = (
             rf_model.predict_proba(input_data)[0].max()
@@ -115,9 +160,11 @@ def predict():
             else 0.5
         )
 
-        svm_input = input_data
+        # SVM Prediction
+        svm_input = np.array([features])
+
         if svm_scaler is not None:
-            svm_input = svm_scaler.transform(np.array([features]))
+            svm_input = svm_scaler.transform(svm_input)
 
         svm_pred = svm_model.predict(svm_input)[0]
         svm_conf = (
@@ -140,7 +187,6 @@ def predict():
         return jsonify({"error": str(e)}), 500
 
 
-
 @app.route("/explain", methods=["POST"])
 def explain():
     try:
@@ -149,34 +195,24 @@ def explain():
         if not data or "features" not in data:
             return jsonify({"error": "Missing features"}), 400
 
-        # Convert to numpy
         features = np.array([data["features"]])
 
-        # Apply scaler if exists
         if rf_scaler is not None:
             features = rf_scaler.transform(features)
 
-        # 🔥 Get model prediction first
         rf_pred = rf_model.predict(features)[0]
 
-        # Get SHAP values
         shap_values = rf_explainer(features)
         shap_array = shap_values.values
 
-        # 🔥 Handle binary and multi-class safely
         if len(shap_array.shape) == 3:
-            # Multi-class (1, features, classes)
             class_index = int(rf_pred)
             shap_class = shap_array[0, :, class_index]
-
-            # Base value per class
             base_value = float(shap_values.base_values[0][class_index])
         else:
-            # Binary case (1, features)
             shap_class = shap_array[0]
             base_value = float(shap_values.base_values[0])
 
-        # Get feature names dynamically
         if hasattr(rf_model, "feature_names_in_"):
             feature_names = rf_model.feature_names_in_
         elif rf_features:
@@ -188,6 +224,7 @@ def explain():
 
         for i in range(len(shap_class)):
             shap_val = float(shap_class[i])
+
             explanation.append({
                 "feature": feature_names[i],
                 "value": float(features[0][i]),
@@ -195,7 +232,6 @@ def explain():
                 "impact": "positive" if shap_val > 0 else "negative"
             })
 
-        # Sort by strongest contribution
         explanation.sort(key=lambda x: abs(x["shap_value"]), reverse=True)
 
         return jsonify({
@@ -205,10 +241,9 @@ def explain():
         }), 200
 
     except Exception as e:
-        import traceback
-        print(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
