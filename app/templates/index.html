@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block head %}
+    <title>XAI_IDS Dashboard</title>
+{% endblock head %}
+
+{% block body %}
+    <div class="header">
+        <div class="logo">
+            <img src="{{ url_for('static', filename='images/logo.png') }}" alt="XAI_IDS Logo" width="150px" height="50px">
+        </div>
+        <div class="navbar">
+            <a href="#home">Home</a>
+            <a hred="#predict">Predict</a>
+            <a href="#contact">Contact</a>
+        </div>
+    </div>
+{% endblock body %}

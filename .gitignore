@@ -1,0 +1,53 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Flask
+instance/
+.webassets-cache/
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# Environment variables / secrets
+.env
+.env.*
+
+# Jupyter / notebooks
+.ipynb_checkpoints/
+*.ipynb
+notebooks/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE / Editor
+.vscode/
+.idea/
+
+# Build / distribution
+build/
+dist/
+*.egg-info/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Training / raw data
+data/
+
+# Ignore all model files from GitHub
+models/*.pkl
+
+# Keep models folder structure
+!models/
+!models/.gitkeep
